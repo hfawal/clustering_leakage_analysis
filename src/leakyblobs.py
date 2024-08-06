@@ -2,10 +2,13 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-
 from pyvis.network import Network
 from scipy.stats import norm
 
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter as letter
+from openpyxl.styles import Font, Color, PatternFill, NamedStyle
+from openpyxl.formatting.rule import ColorScale, FormatObject, Rule
 
 
 # Internal method - prepares data. Expects:
@@ -242,7 +245,7 @@ class ClusterEvaluator:
 
     # Do hypothesis testing on the total leakage at different detection thresholds and different comparison values
     # for the alternative hypothesis. Generate a plotly table, also returns data behind the table in a tuple.
-    def hypothesis_test_total_leakage(self):
+    def hypothesis_test_total_leakage(self, significance_level = 0.05):
 
         comparison_values = np.linspace(0.05, 0.25, num=9)
         detection_thresholds = np.linspace(0.05, 0.25, num=9)
@@ -258,7 +261,7 @@ class ClusterEvaluator:
         # The alternative is "the total leakage is more than X"
         # Performing the grid of hypothesis tests:
 
-        significance_level = 0.05
+        alpha = significance_level
 
         n = self.count
         p_0 = comparison_values.reshape(-1, 1)
@@ -270,7 +273,7 @@ class ClusterEvaluator:
         z_stats = numerator / denominator
 
         p_values = 1 - norm.cdf(z_stats)
-        decisions = p_values < significance_level
+        decisions = p_values < alpha
 
         # Format decisions in a table.
 
@@ -293,6 +296,204 @@ class ClusterEvaluator:
             yaxis=dict(title="Comparison", tickvals=list(range(len(y_axis))), ticktext=y_axis)
         )
 
-        fig.show()
-
         return (fig, cell_labels, cell_colors, x_axis, y_axis)
+    
+    
+    # Write full report to xlsx. (Does not include influence graph)
+    def save_xml_report(self, 
+                        detection_thresh: float = 0.05, 
+                        influence_thresh: float = 0.02,
+                        significance_level: float = 0.05,
+                        filename: str = "cluster_leakage_report.xlsx"):
+
+        col_names = ["ID", "TARGET", "PREDICTION"]
+        predictions_arr = self.predictions.to_numpy()
+        influence_arr = self.get_influence(detection_thresh)
+        _, cell_labels, cell_colors, x_axis, y_axis = self.hypothesis_test_total_leakage(significance_level)
+
+        wb = Workbook()
+
+        # ---------------------------------------------------------------------   Write to Sheet 1.
+        sheet1 = wb.active
+        sheet1.title = "Predictions and Targets"
+
+        # Header row
+        sheet1.freeze_panes = "A2" # Freeze header row.
+        header = col_names + [f"CLUSTER_{i}" for i in range(self.num_clusters)]
+        sheet1.append(header)
+
+        header_style = NamedStyle(name="header")
+        header_style.font = Font(bold=True)
+        header_style.fill = PatternFill(patternType="solid", fgColor="9ec0ff")
+
+        for col in sheet1.iter_cols(min_row=1, max_row=1):
+            col[0].style = header_style
+
+        # Add the prediction data.
+        for i in range(predictions_arr.shape[0]):
+            sheet1.append(list(predictions_arr[i]))
+
+        last_row = 1 + predictions_arr.shape[0]
+        last_col = letter(sheet1.max_column)
+        last_cell_address = f"{last_col}{last_row}"
+
+        percent_style = NamedStyle(name="percent")
+        percent_style.number_format = "0.00%"
+        cells = sheet1[f"D2:{last_cell_address}"]
+        for row in cells:
+            for cell in row:
+                cell.style = percent_style
+
+        # Conditional color gradient formatting for the probability outputs.
+        first = FormatObject(type='num', val=0)
+        last = FormatObject(type='num', val=1)
+        colors = [Color('FFFFFF'), Color('02bd56')]
+        color_scale = ColorScale(cfvo=[first, last], color=colors)
+        color_rule = Rule(type='colorScale', colorScale=color_scale)
+        sheet1.conditional_formatting.add(f"D2:{last_cell_address}", color_rule)
+    
+        # -----------------------------------------------------------------------------  Write to sheet 2.
+        sheet2 = wb.create_sheet("Cluster Leakage")
+
+        # Cluster Title Row
+        cluster_names = [f"CLUSTER_{i}" for i in range(self.num_clusters)]
+        i = 0
+        for col in sheet2.iter_cols(min_row=1, max_row=1, min_col=4, max_col=(4 + self.num_clusters - 1)):
+            col[0].value = cluster_names[i]
+            col[0].style = header_style
+            i = i + 1
+
+        # Statistic Titles
+        cells = sheet2["C2":"C6"]
+        titles = ["SUPPORT", "COUNT > 5%", "LEAKY RECALL", "RECALL", "LEAKAGE"]
+        i = 0
+        for row in cells:
+            for cell in row:
+                cell.value = titles[i]
+                cell.style = header_style
+                i = i + 1
+
+        # Fill in support.
+        i = 0
+        for col in sheet2.iter_cols(min_row=2, max_row=2, min_col=4, max_col=(4 + self.num_clusters - 1)):
+            col[0].value = f"=COUNTIF('Predictions and Targets'!B:B, \"={i}\")"
+            i = i + 1
+
+        # Fill in Count > 5%.
+        i = 0
+        for col in sheet2.iter_cols(min_row=3, max_row=3, min_col=4, max_col=(4 + self.num_clusters - 1)):
+            col[0].value = f"=COUNTIF('Predictions and Targets'!{letter(4+i)}:{letter(4+i)}, \">0.05\")"
+            i = i + 1
+
+        # Fill in Leaky Recall.
+        i = 0
+        for col in sheet2.iter_cols(min_row=4, max_row=4, min_col=4, max_col=(4 + self.num_clusters - 1)):
+            col[0].value = f"={letter(4+i)}3 / {letter(4+i)}2"
+            col[0].style = percent_style
+            i = i + 1
+
+        # Fill in Recall.
+        i = 0
+        for col in sheet2.iter_cols(min_row=5, max_row=5, min_col=4, max_col=(4 + self.num_clusters - 1)):
+            col[0].value = f"=COUNTIFS('Predictions and Targets'!B:B, \"={i}\", 'Predictions and Targets'!C:C, \"={i}\") / {letter(4+i)}2"
+            col[0].style = percent_style
+            i = i + 1
+
+        # Fill in Leakage percentage.
+        i = 0
+        for col in sheet2.iter_cols(min_row=6, max_row=6, min_col=4, max_col=(4 + self.num_clusters - 1)):
+            col[0].value = f"={letter(4+i)}4 - {letter(4+i)}5"
+            col[0].style = percent_style
+            i = i + 1
+
+        # Create axes for leakage matrix.
+        axes_label_fill = PatternFill(patternType="solid", fgColor="ed9fd4")
+        for col in sheet2.iter_cols(min_row=11, max_row=11, min_col=4, max_col=(4 + self.num_clusters - 1)):
+            col[0].fill = axes_label_fill
+        for row in sheet2.iter_rows(min_row=13, max_row=(13 + self.num_clusters - 1), min_col=2, max_col=2):
+            row[0].fill = axes_label_fill
+        sheet2["F11"] = "LEAKS TO CLUSTER"
+        sheet2["B15"] = "TARGET CLUSTER"
+        i = 0
+        for col in sheet2.iter_cols(min_row=12, max_row=12, min_col=4, max_col=(4 + self.num_clusters - 1)):
+            col[0].value = cluster_names[i]
+            col[0].style = header_style
+            i = i + 1
+        i = 0
+        for row in sheet2.iter_rows(min_row=13, max_row=(13 + self.num_clusters - 1), min_col=3, max_col=3):
+            row[0].value = cluster_names[i]
+            row[0].style = header_style
+            i = i + 1
+
+        # Add the inter-cluster leakages.
+        matrix_corner = f"{letter(4 + self.num_clusters - 1)}{13 + self.num_clusters - 1}"
+        cells = sheet2["D13":matrix_corner]
+        for i in range(len(cells)):
+            for j in range(len(cells[0])):
+                cells[i][j].value = influence_arr[i][j]
+                cells[i][j].style = percent_style
+
+        # Delete the diagonal of the matrix.
+        black_fill = PatternFill(patternType="solid", fgColor="000000")
+        for i in range(self.num_clusters):
+            address = f"{letter(4 + i)}{13 + i}"
+            sheet2[address] = ""
+            sheet2[address].fill = black_fill
+
+        # Gradient conditional formatting
+        first = FormatObject(type='num', val=influence_thresh)
+        last = FormatObject(type='max')
+        colors = [Color('FFFFFF'), Color('02bd56')]
+        color_scale = ColorScale(cfvo=[first, last], color=colors)
+        color_rule = Rule(type='colorScale', colorScale=color_scale)
+        sheet2.conditional_formatting.add(f"D13:{matrix_corner}", color_rule)
+
+        # --------------------------------------------------------------------------------- Write to Sheet 3.
+        sheet3 = wb.create_sheet("Total Leakage Tests")
+
+        # Create axes for leakage matrix.
+        for col in sheet3.iter_cols(min_row=2, max_row=2, min_col=4, max_col=(4 + 9 - 1)):
+            col[0].fill = axes_label_fill
+        for row in sheet3.iter_rows(min_row=4, max_row=(4 + 9 - 1), min_col=2, max_col=2):
+            row[0].fill = axes_label_fill
+        sheet3["F2"] = "DETECTION THRESHOLD"
+        sheet3["B6"] = "COMPARISON"
+        i = 0
+        for col in sheet3.iter_cols(min_row=3, max_row=3, min_col=4, max_col=(4 + 9 - 1)):
+            col[0].value = x_axis[i]
+            col[0].style = header_style
+            i = i + 1
+        i = 0
+        for row in sheet3.iter_rows(min_row=4, max_row=(4 + 9 - 1), min_col=3, max_col=3):
+            row[0].value = y_axis[i]
+            row[0].style = header_style
+            i = i + 1
+
+        # Fill in the matrix with the total leakage and hypotheses.
+        matrix_corner = f"{letter(4 + 9 - 1)}{4 + 9 - 1}"
+        cells = sheet3["D4":matrix_corner]
+        NO_fill = PatternFill(patternType="solid", fgColor="76e393")
+        YES_fill = PatternFill(patternType="solid", fgColor="e37676")
+        for i in range(len(cells)):
+            for j in range(len(cells[0])):
+                cells[i][j].value = cell_labels[i][j]
+                cells[i][j].style = percent_style
+                cells[i][j].fill = NO_fill if cell_colors[i][j] == 0 else YES_fill
+
+        # Small key for coloring.
+        sheet3["D15"] = "REJECT"
+        sheet3["D15"].fill = YES_fill
+        sheet3["D16"] = "FAIL TO REJECT"
+        sheet3["D16"].fill = NO_fill
+        sheet3["E15"] = "Statistically significant evidence that cell value (total leakage) is larger than comparison value."
+        sheet3["E16"] = "No evidence that cell value (total leakage) is larger than comparison value."
+
+        # -------------------------------------------------------------------- Cleanup and Save.
+
+        # Iterate over all columns and adjust their widths
+        for ws_name in wb.sheetnames:
+            for column in wb[ws_name].columns:
+                column_letter = column[0].column_letter
+                wb[ws_name].column_dimensions[column_letter].width = 15
+
+        wb.save(filename)
