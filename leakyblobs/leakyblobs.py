@@ -21,10 +21,10 @@ def __prep_data__(predictions: pd.DataFrame,
     
     actual_types = predictions.dtypes.to_dict()
     expected_types = {
-        id_col: "string",
-        target_col: "int",
-        pred_col: "int",
-        prob_col: "vector"
+        id_col: "object",
+        target_col: "int32",
+        pred_col: "int32",
+        prob_col: "object"
     }
 
     for col_name, col_type in expected_types.items():
@@ -40,9 +40,14 @@ def __prep_data__(predictions: pd.DataFrame,
         prob_col: "PROBABILITY"
     })
 
-    prob_df = pd.DataFrame(predictions["PROBABILITY"].tolist(), index=predictions.index)
-    prob_df.columns = [str(i) for i in prob_df.columns]
-    predictions = pd.concat([predictions.drop(columns=['prob_col']), prob_df])
+    def expand_vec(vec):
+        return vec["values"]
+
+    prob_df = pd.DataFrame(predictions["PROBABILITY"].map(expand_vec))
+    prob_df = pd.DataFrame(prob_df["PROBABILITY"].to_list())
+    prob_df.columns = [str(i) for i in range(len(prob_df.columns))]
+    predictions = predictions.drop("PROBABILITY", axis=1)
+    predictions = pd.concat([predictions, prob_df], axis=1)
 
     return predictions
 
@@ -63,8 +68,8 @@ class ClusterEvaluator:
         self.support: np.ndarray = None
         self.num_clusters: int = predictions["TARGET"].nunique()
         self.count = predictions.shape[0]
-        self.targets_arr = self.predictions["TARGET"].to_numpy().reshape(-1)
-        self.off_prob_arr = self.predictions.drop("ID", "TARGET", "PREDICTION").to_numpy()
+        self.targets_arr = self.predictions[["TARGET"]].to_numpy().reshape(-1).astype(int)
+        self.off_prob_arr = self.predictions.drop(["ID", "TARGET", "PREDICTION"], axis=1).to_numpy()
         self.off_prob_arr[np.arange(self.count), self.targets_arr] = 0
 
 
@@ -78,17 +83,17 @@ class ClusterEvaluator:
         influence_counts = self.predictions.groupby("TARGET").agg(agg_dict).reset_index()
         influence_counts = influence_counts.sort_values(by="TARGET")
 
-        return influence_counts.drop("TARGET").to_numpy()
+        return influence_counts.drop("TARGET", axis=1).to_numpy()
     
 
     # Gets the support of each target, ordered from 0 upwards.
     def get_support(self) -> np.ndarray:
 
-        if self.support != None:
+        if self.support is not None:
             return self.support
         
         support_df = self.predictions.groupby("TARGET").size().reset_index(name='count').sort_values(by="TARGET")
-        self.support = support_df.to_numpy().reshape(-1)
+        self.support = support_df[["count"]].to_numpy().reshape(-1)
 
         return self.support
     
@@ -109,7 +114,7 @@ class ClusterEvaluator:
     def get_influence_dictionary(self, 
                                  detection_thresh: float = 0.05, 
                                  influence_thresh: float = 0.02,
-                                 print = True) -> dict:
+                                 printPhrases = True) -> dict:
         
         # Set diagonal to 0 so that it isn't counted. (Cluster does not "influence" itself).
         influence_matrix = self.get_influence(detection_thresh)
@@ -126,12 +131,12 @@ class ClusterEvaluator:
                     influence_dict[(i, j)] = (influence_matrix[i][j], influence_counts[i][j], support_arr[i])
 
         # Optionally print readable phrases.
-        if print:
+        if printPhrases:
             influence_dict_sorted = sorted(influence_dict.items(), key=lambda item: item[1][0], reverse=True)
             for item in influence_dict_sorted:
                 start, end = item[0]
                 prob, count, support = item[1]
-                print(f"Cluster {end} influences cluster {end} by {prob:.2%}  ({count} / {support})")   
+                print(f"Cluster {end} influences cluster {start} by {prob:.2%}  ({count} / {support})")   
 
         return influence_dict
     
@@ -143,11 +148,12 @@ class ClusterEvaluator:
                                filename: str = "clustering_influence_graph.html"):
 
         influence_matrix = self.get_influence(detection_thresh)
+        np.fill_diagonal(influence_matrix, 0) # No self-edges in the graph!
 
         # Create a directed graph
         net = Network(notebook=True, directed=True, height="750px", width="100%", bgcolor="#222222", font_color="black")
 
-        # Add nodes with color based on total connections
+        # Add nodes.
         for i in range(self.num_clusters):
             net.add_node(i, label=str(i), shape="circle")
 
