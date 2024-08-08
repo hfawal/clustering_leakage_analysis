@@ -35,9 +35,10 @@ class ClusterEvaluator:
         self.off_prob_arr[np.arange(self.count), self.targets_arr] = 0
 
 
-    # Internal static method - prepares data. Expects:
+    # Internal method - prepares data. Expects:
     # Example ID column (str), target column (int), prediction column (int), probability column (array or list).
-    def __prep_data__(predictions: pd.DataFrame, 
+    def __prep_data__(self,
+                        predictions: pd.DataFrame, 
                         id_col: str = "ID", 
                         target_col: str = "TARGET",
                         pred_col: str = "PREDICTION",
@@ -64,13 +65,12 @@ class ClusterEvaluator:
             prob_col: "PROBABILITY"
         })
 
-        # TODO: add this commented out code to the get predictions method of 
-        # def expand_vec(vec):
-        #     return vec["values"]
-
-        # prob_df = pd.DataFrame(predictions["PROBABILITY"].map(expand_vec))
-        prob_df = pd.DataFrame(predictions["PROBABILITY"].to_list())
-        prob_df.columns = [str(i) for i in range(len(prob_df.columns))]
+        prob_df = pd.DataFrame(predictions["PROBABILITY"].to_list(), index=predictions.index)
+        old_names = prob_df.columns
+        prob_df = prob_df.rename(columns={
+            old_names[i]: str(i)
+            for i in range(len(old_names))
+        })
         predictions = predictions.drop("PROBABILITY", axis=1)
         predictions = pd.concat([predictions, prob_df], axis=1)
 
@@ -82,7 +82,10 @@ class ClusterEvaluator:
     # result[i][j] = influence count of j on target i.
     def get_influence_counts(self, detection_thresh: float = 0.05) -> np.ndarray:
 
-        agg_dict = {str(i): (lambda x: (x >= detection_thresh).sum()) for i in range(self.num_clusters)}
+        agg_dict = {
+            str(i): (lambda x: (x >= float(detection_thresh)).sum()) 
+            for i in range(self.num_clusters)
+        }
         influence_counts = self.predictions.groupby("TARGET").agg(agg_dict).reset_index()
         influence_counts = influence_counts.sort_values(by="TARGET")
 
@@ -146,7 +149,7 @@ class ClusterEvaluator:
 
     # Create a graph out of the edges that appear in the influence dictionary above.
     def create_influence_graph(self,
-                               detection_thresh: float  = 0.05,
+                               detection_thresh: float = 0.05,
                                influence_thresh: float = 0.02,
                                filename: str = "clustering_influence_graph.html"):
 
@@ -534,11 +537,11 @@ class ClusterPredictor:
         self.data["train_y_pred_proba"] = self.model.predict_proba(self.data["train_x"])
         self.data["test_y_pred"] = self.model.predict(self.data["test_x"])
         self.data["test_y_pred_proba"] = self.model.predict_proba(self.data["test_x"])
-        print("CLASSES:", self.model.classes_) # TODO - REMOVE
     
-    # Internal static method to process data. Expects ID and target columns. 
+    # Internal method to process data. Expects ID and target columns. 
     # The rest of the columns are treated as features.
-    def __process_data__(clustering_data: pd.DataFrame, 
+    def __process_data__(self,
+                         clustering_data: pd.DataFrame, 
                          id_col: str = "ID", 
                          target_col: str = "TARGET"):
         
@@ -564,12 +567,13 @@ class ClusterPredictor:
         train_data, test_data = train_test_split(clustering_data, test_size=0.2, random_state=42)
 
         feature_cols = clustering_data.columns.to_list()
-        feature_cols.remove("ID", "TARGET")
+        feature_cols.remove("ID")
+        feature_cols.remove("TARGET")
 
         train_x = train_data[feature_cols].to_numpy()
-        train_y = train_data[["TARGET"]].to_numpy()
+        train_y = train_data[["TARGET"]].to_numpy().reshape(-1)
         test_x = test_data[feature_cols].to_numpy()
-        test_y = test_data[["TARGET"]].to_numpy()
+        test_y = test_data[["TARGET"]].to_numpy().reshape(-1)
 
         return train_data, test_data, train_x, train_y, test_x, test_y
     
@@ -580,7 +584,7 @@ class ClusterPredictor:
         log_reg = LogisticRegression(random_state=42)
 
         param_grid = {
-            'C': np.logspace(-4, 0, 10)  # 10 values from 10^-4 to 10^0
+            'C': np.logspace(-4, 0, 5)  # 5 values from 10^-4 to 10^0
         }
 
         crossval = GridSearchCV(estimator=log_reg, 
@@ -608,14 +612,14 @@ class ClusterPredictor:
         # Generate the confusion matrix
         conf_matrix = confusion_matrix(y_true, y_pred)
         conf_matrix = np.round(conf_matrix, decimals=4)
-        print("Confusion Matrix:\n", conf_matrix)
         fig = go.Figure(data=go.Heatmap(
             z=conf_matrix,
             text=conf_matrix,
+            texttemplate="%{text}"
         ))
 
         fig.update_layout(
-            title="Confusion Matrix",
+            title="Confusion Matrix (TRAIN)",
             xaxis=dict(title="Prediction", tickvals=list(range(len(self.model.classes_)))),
             yaxis=dict(title="Label", tickvals=list(range(len(self.model.classes_))))
         )
@@ -640,14 +644,14 @@ class ClusterPredictor:
         # Generate the confusion matrix
         conf_matrix = confusion_matrix(y_true, y_pred)
         conf_matrix = np.round(conf_matrix, decimals=4)
-        print("Confusion Matrix:\n", conf_matrix)
         fig = go.Figure(data=go.Heatmap(
             z=conf_matrix,
             text=conf_matrix,
+            texttemplate="%{text}"
         ))
 
         fig.update_layout(
-            title="Confusion Matrix",
+            title="Confusion Matrix (TEST)",
             xaxis=dict(title="Prediction", tickvals=list(range(len(self.model.classes_)))),
             yaxis=dict(title="Label", tickvals=list(range(len(self.model.classes_))))
         )
@@ -666,9 +670,11 @@ class ClusterPredictor:
     # Formatted data frame to be passed to the ClusterEvaluator.
     def get_train_predictions(self):
 
-        output = self.data["train_data"][["ID", "TARGET"]]
-        output["PREDICTION"] = pd.Series(self.data["train_y_pred"])
-        output["PROBABILITY"] = pd.Series(self.data["train_y_pred_proba"])
+        output: pd.DataFrame = pd.DataFrame(self.data["train_data"][["ID", "TARGET"]])
+        output["PREDICTION"] = pd.Series(self.data["train_y_pred"],
+                                         index=output.index)
+        output["PROBABILITY"] = pd.Series(self.data["train_y_pred_proba"].tolist(), 
+                                          index=output.index)
 
         return output
     
@@ -676,8 +682,10 @@ class ClusterPredictor:
     # Formatted data frame to be passed to the ClusterEvaluator.
     def get_test_predictions(self):
 
-        output = self.data["test_data"][["ID", "TARGET"]]
-        output["PREDICTION"] = pd.Series(self.data["test_y_pred"])
-        output["PROBABILITY"] = pd.Series(self.data["test_y_pred_proba"])
+        output: pd.DataFrame = pd.DataFrame(self.data["test_data"][["ID", "TARGET"]])
+        output["PREDICTION"] = pd.Series(self.data["test_y_pred"], 
+                                         index=output.index)
+        output["PROBABILITY"] = pd.Series(self.data["test_y_pred_proba"].tolist(), 
+                                          index=output.index)
 
         return output
