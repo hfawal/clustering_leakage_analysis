@@ -16,7 +16,8 @@ setup(
                       'plotly>=5.20.0',
                       'scipy>=1.14.0',
                       'openpyxl>=3.1.5',
-                      'setuptools>=72.1.0'               
+                      'setuptools>=72.1.0',
+                      'scikit-learn>=1.5.1'              
                       ],
 
     classifiers=[

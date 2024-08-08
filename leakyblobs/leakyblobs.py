@@ -4,52 +4,14 @@ import pandas as pd
 import plotly.graph_objects as go
 from pyvis.network import Network
 from scipy.stats import norm
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, confusion_matrix
 
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter as letter
 from openpyxl.styles import Font, Color, PatternFill, NamedStyle
 from openpyxl.formatting.rule import ColorScale, FormatObject, Rule
-
-
-# Internal method - prepares data. Expects:
-# Example ID column (str), target column (int), prediction column (int), probability vector column (vector).
-def __prep_data__(predictions: pd.DataFrame, 
-                    id_col: str = "ID", 
-                    target_col: str = "TARGET",
-                    pred_col: str = "PREDICTION",
-                    prob_col: str = "PROBABILITY"):
-    
-    actual_types = predictions.dtypes.to_dict()
-    expected_types = {
-        id_col: "object",
-        target_col: "int32",
-        pred_col: "int32",
-        prob_col: "object"
-    }
-
-    for col_name, col_type in expected_types.items():
-        if col_name not in actual_types:
-            raise ValueError(f"The given dataframe is missing the column '{col_name}'!")
-        elif actual_types[col_name] != col_type:
-            raise ValueError(f"The column {col_name} has incorrect type {actual_types[col_name]}! Expected: {col_type}")
-
-    predictions = predictions[[id_col, target_col, pred_col, prob_col]].rename(columns={
-        id_col: "ID",
-        target_col: "TARGET",
-        pred_col: "PREDICTION",
-        prob_col: "PROBABILITY"
-    })
-
-    def expand_vec(vec):
-        return vec["values"]
-
-    prob_df = pd.DataFrame(predictions["PROBABILITY"].map(expand_vec))
-    prob_df = pd.DataFrame(prob_df["PROBABILITY"].to_list())
-    prob_df.columns = [str(i) for i in range(len(prob_df.columns))]
-    predictions = predictions.drop("PROBABILITY", axis=1)
-    predictions = pd.concat([predictions, prob_df], axis=1)
-
-    return predictions
 
 
 
@@ -64,7 +26,7 @@ class ClusterEvaluator:
                     pred_col: str = "PREDICTION",
                     prob_col: str = "PROBABILITY"):
 
-        self.predictions: pd.DataFrame = __prep_data__(predictions, id_col, target_col, pred_col, prob_col)
+        self.predictions: pd.DataFrame = self.__prep_data__(predictions, id_col, target_col, pred_col, prob_col)
         self.support: np.ndarray = None
         self.num_clusters: int = predictions["TARGET"].nunique()
         self.count = predictions.shape[0]
@@ -72,6 +34,47 @@ class ClusterEvaluator:
         self.off_prob_arr = self.predictions.drop(["ID", "TARGET", "PREDICTION"], axis=1).to_numpy()
         self.off_prob_arr[np.arange(self.count), self.targets_arr] = 0
 
+
+    # Internal static method - prepares data. Expects:
+    # Example ID column (str), target column (int), prediction column (int), probability column (array or list).
+    def __prep_data__(predictions: pd.DataFrame, 
+                        id_col: str = "ID", 
+                        target_col: str = "TARGET",
+                        pred_col: str = "PREDICTION",
+                        prob_col: str = "PROBABILITY"):
+        
+        actual_types = predictions.dtypes.to_dict()
+        expected_types = {
+            id_col: "object",
+            target_col: "int32",
+            pred_col: "int32",
+            prob_col: "object"
+        }
+
+        for col_name, col_type in expected_types.items():
+            if col_name not in actual_types:
+                raise ValueError(f"The given dataframe is missing the column '{col_name}'!")
+            elif actual_types[col_name] != col_type:
+                raise ValueError(f"The column {col_name} has incorrect type {actual_types[col_name]}! Expected: {col_type}")
+
+        predictions = predictions[[id_col, target_col, pred_col, prob_col]].rename(columns={
+            id_col: "ID",
+            target_col: "TARGET",
+            pred_col: "PREDICTION",
+            prob_col: "PROBABILITY"
+        })
+
+        # TODO: add this commented out code to the get predictions method of 
+        # def expand_vec(vec):
+        #     return vec["values"]
+
+        # prob_df = pd.DataFrame(predictions["PROBABILITY"].map(expand_vec))
+        prob_df = pd.DataFrame(predictions["PROBABILITY"].to_list())
+        prob_df.columns = [str(i) for i in range(len(prob_df.columns))]
+        predictions = predictions.drop("PROBABILITY", axis=1)
+        predictions = pd.concat([predictions, prob_df], axis=1)
+
+        return predictions
 
 
     # Get the influence count matrix. For all classes i, j: 
@@ -503,3 +506,178 @@ class ClusterEvaluator:
                 wb[ws_name].column_dimensions[column_letter].width = 15
 
         wb.save(filename)
+
+
+
+# Modeling using sklearn logistic regression. Model outputs can be passed to ClusterEvaluator.
+class ClusterPredictor:
+
+    # Expects targets to be integer encoded from 0 to # clusters - 1
+    def __init__(self,
+                 clustering_data: pd.DataFrame, 
+                 id_col: str = "ID", 
+                 target_col: str = "TARGET"):
+
+        # Keep track of data.
+        data_objects = self.__process_data__(clustering_data, id_col, target_col)
+        data_labels = ["train_data", "test_data", "train_x", "train_y", "test_x", "test_y"]
+        self.data = {
+            data_labels[i]: data_objects[i]
+            for i in range(6)
+        }
+
+        # Train a model on the data.
+        self.model = self.__train_model__()
+
+        # Keep track of model predictions on the internal train and test sets.
+        self.data["train_y_pred"] = self.model.predict(self.data["train_x"])
+        self.data["train_y_pred_proba"] = self.model.predict_proba(self.data["train_x"])
+        self.data["test_y_pred"] = self.model.predict(self.data["test_x"])
+        self.data["test_y_pred_proba"] = self.model.predict_proba(self.data["test_x"])
+        print("CLASSES:", self.model.classes_) # TODO - REMOVE
+    
+    # Internal static method to process data. Expects ID and target columns. 
+    # The rest of the columns are treated as features.
+    def __process_data__(clustering_data: pd.DataFrame, 
+                         id_col: str = "ID", 
+                         target_col: str = "TARGET"):
+        
+        actual_types = clustering_data.dtypes.to_dict()
+        expected_types = {
+            id_col: "object",
+            target_col: "int32"
+        }
+
+        for col_name, col_type in expected_types.items():
+            if col_name not in actual_types:
+                raise ValueError(f"The given dataframe is missing the column '{col_name}'!")
+            elif actual_types[col_name] != col_type:
+                raise ValueError(f"The column {col_name} has incorrect type {actual_types[col_name]}! Expected: {col_type}")
+
+        clustering_data = clustering_data.rename(columns={
+            id_col: "ID",
+            target_col: "TARGET"
+        })
+
+        
+        # Split the data into train and test sets
+        train_data, test_data = train_test_split(clustering_data, test_size=0.2, random_state=42)
+
+        feature_cols = clustering_data.columns.to_list()
+        feature_cols.remove("ID", "TARGET")
+
+        train_x = train_data[feature_cols].to_numpy()
+        train_y = train_data[["TARGET"]].to_numpy()
+        test_x = test_data[feature_cols].to_numpy()
+        test_y = test_data[["TARGET"]].to_numpy()
+
+        return train_data, test_data, train_x, train_y, test_x, test_y
+    
+    
+    # Internal method to train logistic regression model.
+    def __train_model__(self):
+
+        log_reg = LogisticRegression(random_state=42)
+
+        param_grid = {
+            'C': np.logspace(-4, 0, 10)  # 10 values from 10^-4 to 10^0
+        }
+
+        crossval = GridSearchCV(estimator=log_reg, 
+                             param_grid=param_grid,
+                             cv=5,
+                             scoring='accuracy')
+        
+        crossval.fit(self.data["train_x"], self.data["train_y"])
+
+        return crossval.best_estimator_
+        
+
+    # Evalaute the model on the train set.
+    def evaluate_model_train(self):
+
+        y_true = self.data["train_y"]
+        y_pred = self.data["train_y_pred"]
+
+        print("\n----------------------- Train Evaluation -----------------------")
+
+        # Generate the classification report
+        report = classification_report(y_true, y_pred)
+        print("Classification Report:\n", report)
+
+        # Generate the confusion matrix
+        conf_matrix = confusion_matrix(y_true, y_pred)
+        conf_matrix = np.round(conf_matrix, decimals=4)
+        print("Confusion Matrix:\n", conf_matrix)
+        fig = go.Figure(data=go.Heatmap(
+            z=conf_matrix,
+            text=conf_matrix,
+        ))
+
+        fig.update_layout(
+            title="Confusion Matrix",
+            xaxis=dict(title="Prediction", tickvals=list(range(len(self.model.classes_)))),
+            yaxis=dict(title="Label", tickvals=list(range(len(self.model.classes_))))
+        )
+
+        fig.show()
+
+        print("----------------------------------------------------------------\n")
+
+
+    # Evalaute the model on the train set.
+    def evaluate_model_test(self):
+
+        y_true = self.data["test_y"]
+        y_pred = self.data["test_y_pred"]
+
+        print("\n----------------------- Test Evaluation -----------------------")
+
+        # Generate the classification report
+        report = classification_report(y_true, y_pred)
+        print("Classification Report:\n", report)
+
+        # Generate the confusion matrix
+        conf_matrix = confusion_matrix(y_true, y_pred)
+        conf_matrix = np.round(conf_matrix, decimals=4)
+        print("Confusion Matrix:\n", conf_matrix)
+        fig = go.Figure(data=go.Heatmap(
+            z=conf_matrix,
+            text=conf_matrix,
+        ))
+
+        fig.update_layout(
+            title="Confusion Matrix",
+            xaxis=dict(title="Prediction", tickvals=list(range(len(self.model.classes_)))),
+            yaxis=dict(title="Label", tickvals=list(range(len(self.model.classes_))))
+        )
+
+        fig.show()
+
+        print("----------------------------------------------------------------\n")
+
+
+    # Full evaluation.
+    def evaluate_model(self):
+        self.evaluate_model_train()
+        self.evaluate_model_test()
+
+
+    # Formatted data frame to be passed to the ClusterEvaluator.
+    def get_train_predictions(self):
+
+        output = self.data["train_data"][["ID", "TARGET"]]
+        output["PREDICTION"] = pd.Series(self.data["train_y_pred"])
+        output["PROBABILITY"] = pd.Series(self.data["train_y_pred_proba"])
+
+        return output
+    
+
+    # Formatted data frame to be passed to the ClusterEvaluator.
+    def get_test_predictions(self):
+
+        output = self.data["test_data"][["ID", "TARGET"]]
+        output["PREDICTION"] = pd.Series(self.data["test_y_pred"])
+        output["PROBABILITY"] = pd.Series(self.data["test_y_pred_proba"])
+
+        return output
