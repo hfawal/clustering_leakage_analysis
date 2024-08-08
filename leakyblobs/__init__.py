@@ -8,4 +8,4 @@ __version__ = "0.2.0"
 __author__ = 'Hady Fawal'
 __credits__ = 'Equancy | Groupe EDG'
 
-import leakyblobs
+from .leakyblobs import ClusterEvaluator, ClusterPredictor
