@@ -19,7 +19,7 @@ evaluator = ClusterEvaluator(test_cluster_predictions, "EXAMPLE_ID", "TARGET", "
 np.set_printoptions(precision=4, suppress=True)
 
 print("get_influence_counts")
-print(evaluator.get_influence_counts(detection_thresh=0.05))
+print(evaluator.get_leakage_counts(detection_thresh=0.05))
 print()
 
 print("get_support")
@@ -27,11 +27,11 @@ print(evaluator.get_support())
 print()
 
 print("get_influence")
-print(evaluator.get_influence(detection_thresh=0.05))
+print(evaluator.get_leakage(detection_thresh=0.05))
 print()
 
 print("get_influence_dictionary")
-print(evaluator.get_influence_dictionary(detection_thresh=0.05, influence_thresh=0.02, printPhrases=True))
+print(evaluator.get_leakage_dictionary(detection_thresh=0.05, leakage_thresh=0.02, printPhrases=True))
 print()
 
 print("get_total_leakage")
@@ -46,11 +46,11 @@ print()
 # These two methods save files in the working directory.
 
 print("create_influence_graph")
-evaluator.create_influence_graph(detection_thresh=0.05, influence_thresh=0.02, 
+evaluator.save_leakage_graph(detection_thresh=0.05, leakage_thresh=0.02, 
                                  filename="marjane_clustering_influence_graph.html")
 print()
 
 print("save_xml_report")
-evaluator.save_xml_report(detection_thresh=0.05, influence_thresh=0.02, 
+evaluator.save_xml_report(detection_thresh=0.05, leakage_thresh=0.02, 
                           significance_level=0.05, filename="marjane_clustering_leakage_report.xlsx")
 print()

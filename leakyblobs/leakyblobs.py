@@ -7,6 +7,7 @@ from scipy.stats import norm
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.kernel_approximation import RBFSampler
 
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter as letter
@@ -80,16 +81,16 @@ class ClusterEvaluator:
     # Get the influence count matrix. For all classes i, j: 
     # Among examples of target class i, how many of them have probability in j above a certain threshold?
     # result[i][j] = influence count of j on target i.
-    def get_influence_counts(self, detection_thresh: float = 0.05) -> np.ndarray:
+    def get_leakage_counts(self, detection_thresh: float = 0.05) -> np.ndarray:
 
         agg_dict = {
             str(i): (lambda x: (x >= float(detection_thresh)).sum()) 
             for i in range(self.num_clusters)
         }
-        influence_counts = self.predictions.groupby("TARGET").agg(agg_dict).reset_index()
-        influence_counts = influence_counts.sort_values(by="TARGET")
+        leakage_counts = self.predictions.groupby("TARGET").agg(agg_dict).reset_index()
+        leakage_counts = leakage_counts.sort_values(by="TARGET")
 
-        return influence_counts.drop("TARGET", axis=1).to_numpy()
+        return leakage_counts.drop("TARGET", axis=1).to_numpy()
     
 
     # Gets the support of each target, ordered from 0 upwards.
@@ -107,9 +108,9 @@ class ClusterEvaluator:
     # Influence = influence count normalized by support of class i. Rows do NOT add to 1.
     # Strictly speaking, an influence[i][j] of 5% means that class j affects 5% of the data with target i.
     # Multiple clusters can affect the same data points, which is why rows don't add to 1.
-    def get_influence(self, detection_thresh: float = 0.05) -> np.ndarray:
+    def get_leakage(self, detection_thresh: float = 0.05) -> np.ndarray:
 
-        counts = self.get_influence_counts(detection_thresh)
+        counts = self.get_leakage_counts(detection_thresh)
         support = self.get_support().reshape(-1, 1)
 
         return counts / support
@@ -117,44 +118,44 @@ class ClusterEvaluator:
 
     # Creates a dictionary from the influence matrix, filtering only the links passing the influence_thresh.
     # print parameter indicates whether to print phrases or not.
-    def get_influence_dictionary(self, 
+    def get_leakage_dictionary(self, 
                                  detection_thresh: float = 0.05, 
-                                 influence_thresh: float = 0.02,
+                                 leakage_thresh: float = 0.02,
                                  printPhrases = True) -> dict:
         
         # Set diagonal to 0 so that it isn't counted. (Cluster does not "influence" itself).
-        influence_matrix = self.get_influence(detection_thresh)
-        np.fill_diagonal(influence_matrix, 0)
+        leakage_matrix = self.get_leakage(detection_thresh)
+        np.fill_diagonal(leakage_matrix, 0)
 
-        influence_counts = self.get_influence_counts(detection_thresh)
+        leakage_counts = self.get_leakage_counts(detection_thresh)
         support_arr = self.get_support()
 
-        influence_dict = {}
+        leakage_dict = {}
 
         for i in range(self.num_clusters):
             for j in range(self.num_clusters):
-                if influence_matrix[i][j] >= influence_thresh:
-                    influence_dict[(i, j)] = (influence_matrix[i][j], influence_counts[i][j], support_arr[i])
+                if leakage_matrix[i][j] >= leakage_thresh:
+                    phrase = f"Cluster {i} leaks into cluster {j} by {leakage_matrix[i][j]:.2%}  ({leakage_counts[i][j]} / {support_arr[i]})"
+                    leakage_dict[(i, j)] = (leakage_matrix[i][j], leakage_counts[i][j], support_arr[i], phrase)
 
         # Optionally print readable phrases.
         if printPhrases:
-            influence_dict_sorted = sorted(influence_dict.items(), key=lambda item: item[1][0], reverse=True)
+            influence_dict_sorted = sorted(leakage_dict.items(), key=lambda item: item[1][0], reverse=True)
             for item in influence_dict_sorted:
-                start, end = item[0]
-                prob, count, support = item[1]
-                print(f"Cluster {end} influences cluster {start} by {prob:.2%}  ({count} / {support})")   
+                _, _, _, phrase = item[1]
+                print(phrase)
 
-        return influence_dict
+        return leakage_dict
     
 
     # Create a graph out of the edges that appear in the influence dictionary above.
-    def create_influence_graph(self,
+    def save_leakage_graph(self,
                                detection_thresh: float = 0.05,
-                               influence_thresh: float = 0.02,
+                               leakage_thresh: float = 0.02,
                                filename: str = "clustering_influence_graph.html"):
 
-        influence_matrix = self.get_influence(detection_thresh)
-        np.fill_diagonal(influence_matrix, 0) # No self-edges in the graph!
+        leakage_matrix = self.get_leakage(detection_thresh)
+        np.fill_diagonal(leakage_matrix, 0) # No self-edges in the graph!
 
         # Create a directed graph
         net = Network(notebook=True, directed=True, height="750px", width="100%", bgcolor="#222222", font_color="black")
@@ -173,10 +174,10 @@ class ClusterEvaluator:
         # Add edges with weights, adjusting for bidirectional edges to avoid overlap
         for i in range(self.num_clusters):
             for j in range(self.num_clusters):
-                if influence_matrix[i][j] >= influence_thresh:
-                    color = get_color(influence_matrix[i][j])
-                    edge_label = f"{influence_matrix[i][j]:.2%}"
-                    if influence_matrix[j][i] >= influence_thresh:  # Check for bidirectional edge
+                if leakage_matrix[i][j] >= leakage_thresh:
+                    color = get_color(leakage_matrix[i][j])
+                    edge_label = f"{leakage_matrix[i][j]:.2%}"
+                    if leakage_matrix[j][i] >= leakage_thresh:  # Check for bidirectional edge
                         # For bidirectional edges, use "smooth" type to avoid overlap
                         net.add_edge(i, j, title=edge_label, label=edge_label, width=3, 
                                      smooth={'type': 'curvedCW', 'roundness': 0.2}, arrowStrikethrough=False, color=color)
@@ -314,13 +315,13 @@ class ClusterEvaluator:
     # Write full report to xlsx. (Does not include influence graph)
     def save_xml_report(self, 
                         detection_thresh: float = 0.05, 
-                        influence_thresh: float = 0.02,
+                        leakage_thresh: float = 0.02,
                         significance_level: float = 0.05,
                         filename: str = "cluster_leakage_report.xlsx"):
 
         col_names = ["ID", "TARGET", "PREDICTION"]
         predictions_arr = self.predictions.to_numpy()
-        influence_arr = self.get_influence(detection_thresh)
+        leakage_arr = self.get_leakage(detection_thresh)
         _, cell_labels, cell_colors, x_axis, y_axis = self.hypothesis_test_total_leakage(significance_level)
 
         wb = Workbook()
@@ -442,7 +443,7 @@ class ClusterEvaluator:
         cells = sheet2["D13":matrix_corner]
         for i in range(len(cells)):
             for j in range(len(cells[0])):
-                cells[i][j].value = influence_arr[i][j]
+                cells[i][j].value = leakage_arr[i][j]
                 cells[i][j].style = percent_style
 
         # Delete the diagonal of the matrix.
@@ -453,7 +454,7 @@ class ClusterEvaluator:
             sheet2[address].fill = black_fill
 
         # Gradient conditional formatting
-        first = FormatObject(type='num', val=influence_thresh)
+        first = FormatObject(type='num', val=leakage_thresh)
         last = FormatObject(type='max')
         colors = [Color('FFFFFF'), Color('02bd56')]
         color_scale = ColorScale(cfvo=[first, last], color=colors)
@@ -519,7 +520,8 @@ class ClusterPredictor:
     def __init__(self,
                  clustering_data: pd.DataFrame, 
                  id_col: str = "ID", 
-                 target_col: str = "TARGET"):
+                 target_col: str = "TARGET",
+                 nonlinear_boundary: bool = True):
 
         # Keep track of data.
         data_objects = self.__process_data__(clustering_data, id_col, target_col)
@@ -528,8 +530,10 @@ class ClusterPredictor:
             data_labels[i]: data_objects[i]
             for i in range(6)
         }
+        
 
         # Train a model on the data.
+        self.nonlinear_boundary = nonlinear_boundary
         self.model = self.__train_model__()
 
         # Keep track of model predictions on the internal train and test sets.
@@ -580,6 +584,12 @@ class ClusterPredictor:
     
     # Internal method to train logistic regression model.
     def __train_model__(self):
+
+        if self.nonlinear_boundary:
+
+            rbf = RBFSampler(gamma='scale', random_state=42)
+            self.data["train_x"] = rbf.fit_transform(self.data["train_x"])
+            self.data["test_x"] = rbf.transform(self.data["test_x"])
 
         log_reg = LogisticRegression(random_state=42)
 

@@ -28,5 +28,5 @@ output.info()
 
 # Try passing it directly to the cluster evaluator
 evaluator = ClusterEvaluator(output)
-evaluator.create_influence_graph(filename="blob_graph.html")
+evaluator.save_leakage_graph(filename="blob_graph.html")
 evaluator.save_xml_report(filename="blob_report.xlsx")

@@ -1,6 +1,13 @@
 # Cluster Leakage Evaluator
 
-**Evaluates the quality of a clustering by examinining the 'leakage' between clusters using the predicted probabilities of a classification model.**
+Evaluates the quality of a clustering by examinining the 'leakage' between clusters using the predicted probabilities of a classification model.
+
+---
+
+**NOTE: This README does not contain the full documentation.**
+**[Read the docs here.]() (TODO: ADD LINK TO DOCS)**
+
+---
 
 ## Overview
 
@@ -70,38 +77,55 @@ To re-upload the package to [PyPI](https://pypi.org/), you will also need to `pi
 
 ## Data
 
-For testing purposes, a dataset containing features used to cluster customers of [Marjane](https://www.marjane.ma/), a client of [Equancy | Groupe EDG](https://www.equancy.fr/fr/) was useful. The `data` folder is not included in the repository to protect their privacy.
+For testing purposes, a dataset containing features used to cluster customers of [Marjane](https://www.marjane.ma/), a client of [Equancy | Groupe EDG](https://www.equancy.fr/fr/), was useful. The `data` folder is not included in the repository to protect their privacy.
 (For readers at Equancy | Groupe EDG, this data can be found in the sandbox cloud storage.) 
 
 ## Usage
 
 Below is a short example of how to use the `leakyblobs` package.
-Read the [full documentation here](). (TODO: ADD LINK TO DOCS)
+
+**[Read the full documentation here.]() (TODO: ADD LINK TO DOCS)**
 
 ```python
 
 import pandas as pd
+import numpy as np
+from sklearn.datasets import load_iris
 from leakyblobs import ClusterPredictor, ClusterEvaluator
 
-DATA_PATH = "...your path here..."
-data = pd.read_parquet(f"{DATA_PATH}\your_data.parquet")
+# Load iris data set as pandas DF, and concatenate target with features.
+iris = load_iris()
+data = pd.DataFrame(
+    np.concatenate((iris.data, np.array([iris.target]).T), axis=1), 
+    columns=iris.feature_names + ['target']
+)
+data = data.reset_index()
+data["index"] = data["index"].astype("str")
+data["target"] = data["target"].astype("int32")
 
-# Use the leakyblobs package to train a model and then analyze leakage.
-
+# Use the leakyblobs package to train a cluster classification model.
 predictor = ClusterPredictor(data, 
-                        id_col="NAME_OF_ID_COLUMN_OR_INDEX_COLUMN", 
-                        target_col="NAME_OF_TARGET_OR_LABEL_COLUMN")
+                             id_col="index", 
+                             target_col="target",
+                             nonlinear_boundary=True)
+
+# Get the predictions and probability outputs on the test set.
 test_predictions = predictor.get_test_predictions()
 
+# Use the leakyblobs package to evaluate the leakage of a clustering
+# given a cluster classification model's predictions and probability outputs.
 evaluator = ClusterEvaluator(test_predictions)
 
-evaluator.create_influence_graph(detection_thresh=0.05,
-                                 influence_thresh=0.02,
-                                 filename="blob_graph.html") # Saved in working directory.
+# Save visualization in working directory.
+evaluator.save_influence_graph(detection_thresh=0.05,
+                                 leakage_thresh=0.02,
+                                 filename="blob_graph.html")
+
+# Save report with leakage metrics in working directory.
 evaluator.save_xml_report(detection_thresh=0.05,
-                          influence_thresh=0.02,
+                          leakage_thresh=0.02,
                           significance_level=0.05,
-                          filename="blob_report.xlsx") # Saved in working directory.
+                          filename="blob_report.xlsx")
 ```
 
 ## License
