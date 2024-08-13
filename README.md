@@ -1,17 +1,17 @@
 # Cluster Leakage Evaluator
 
-Evaluates the quality of a clustering by examinining the 'leakage' between clusters using the predicted probabilities of a classification model.
+Evaluates the quality of a clustering by examinining the leakage between clusters using the predicted probabilities of a classification model.
 
 ---
 
 **NOTE: This README does not contain the full documentation.**
-**[Read the docs here.]() (TODO: ADD LINK TO DOCS)**
+**[Read the docs here.](https://spiffy-bow-8b4.notion.site/LeakyBlobs-b17dd46549f64df4bf617e63d4f3bc01)**
 
 ---
 
 ## Overview
 
-This project is a PyPI package which provides a sensible alternative to traditional ways of evaluating the quality of a clustering, such as the "Elbow Method," Silhouette Score, and Gap Statistic. These methods oversimplify the problem of cluster evaluation by creating a single number which can be difficult to judge for human beings, often resulting in highly subjective choices for clustering hyperparameters such as the number of clusters in algorithms like KMeans. Instead, the `leakyblobs` package contained in this project is based on the idea that a good clustering is a *predictable* clustering. The package provides tools to train simple classifiers to predict clusters and tools to analyze their probability outputs in order to see the extent to which clusters 'leak' into each other.
+This project is a PyPI package which provides a sensible alternative to traditional ways of evaluating the quality of a clustering, such as the Elbow Method, Silhouette Score, and Gap Statistic. These methods tend to oversimplify the problem of cluster evaluation by creating a single number which can be difficult to judge for human beings, often resulting in highly subjective choices for clustering hyperparameters such as the number of clusters in algorithms like KMeans. Instead, the LeakyBlobs package contained in this project is based on the idea that a good clustering is a *predictable* clustering. The package provides tools to train simple classifiers to predict clusters and tools to analyze their probability outputs in order to see the extent to which clusters 'leak' into each other.
 
 ## Table of Contents
 
@@ -82,9 +82,9 @@ For testing purposes, a dataset containing features used to cluster customers of
 
 ## Usage
 
-Below is a short example of how to use the `leakyblobs` package.
+Below is a short example of how to use the LeakyBlobs package.
 
-**[Read the full documentation here.]() (TODO: ADD LINK TO DOCS)**
+**[Read the full documentation here.](https://spiffy-bow-8b4.notion.site/LeakyBlobs-b17dd46549f64df4bf617e63d4f3bc01)**
 
 ```python
 

@@ -2,8 +2,10 @@ from setuptools import setup
 
 setup(
     name='leakyblobs',
-    version='0.2.1',    
+    version='0.2.2',    
     description='Clustering leakage analysis library.',
+    long_description=open("docs/README_PyPI.md").read(),
+    long_description_content_type='text/markdown',
     url='https://git.equancy.cloud/equancy/data-intelligence/clustering_leakage_analysis/-/tree/1_initial_dev_HF',
     author='Hady Fawal',
     author_email='hfawal@equancy.com',
