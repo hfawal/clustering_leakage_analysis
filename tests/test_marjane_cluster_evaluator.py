@@ -51,6 +51,6 @@ evaluator.save_leakage_graph(detection_thresh=0.05, leakage_thresh=0.02,
 print()
 
 print("save_xml_report")
-evaluator.save_xml_report(detection_thresh=0.05, leakage_thresh=0.02, 
+evaluator.save_leakage_report(detection_thresh=0.05, leakage_thresh=0.02, 
                           significance_level=0.05, filename="marjane_clustering_leakage_report.xlsx")
 print()

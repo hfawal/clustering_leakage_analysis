@@ -16,10 +16,39 @@ from openpyxl.formatting.rule import ColorScale, FormatObject, Rule
 
 
 
-# Class which works with one dataset - saves some repetitive operations by keeping the data.
+"""
+Class for evaluating cluster leakage in predictions data.
+
+Parameters:
+- predictions: DataFrame containing prediction data.
+- id_col: Column name for example IDs.
+- target_col: Column name for target values.
+- pred_col: Column name for predicted values.
+- prob_col: Column name for probability values.
+
+Methods:
+- get_leakage_counts(detection_thresh: float = 0.05) -> np.ndarray: Get leakage count matrix.
+- get_support() -> np.ndarray: Get support of each target.
+- get_leakage(detection_thresh: float = 0.05) -> np.ndarray: Get leakage matrix.
+- get_leakage_dictionary(detection_thresh: float = 0.05, leakage_thresh: float = 0.02, printPhrases = True) -> dict: Create dictionary of leakages above a threshold.
+- save_leakage_graph(detection_thresh: float = 0.05, leakage_thresh: float = 0.02, filename: str = "cluster_leakage_graph.html"): Save interactive leakage graph to HTML.
+- get_total_leakage(detection_thresh: float = 0.05) -> float: Get total leakage percentage.
+- hypothesis_test_total_leakage(significance_level = 0.05): Perform hypothesis testing on total leakage.
+- save_leakage_report(detection_thresh: float = 0.05, leakage_thresh: float = 0.02, significance_level: float = 0.05, filename: str = "cluster_leakage_report.xlsx"): Write a leakage report to an excel file.
+"""
 class ClusterEvaluator:
 
-    # Expects predictions and targets to be integer encoded from 0 to # clusters - 1
+
+    """
+    Initialize the ClusterEvaluator object with prediction data after preprocessing.
+
+    Parameters:
+    - predictions: DataFrame containing prediction data.
+    - id_col: Column name for example IDs (default is "ID").
+    - target_col: Column name for target values (default is "TARGET").
+    - pred_col: Column name for predicted values (default is "PREDICTION").
+    - prob_col: Column name for probability values (default is "PROBABILITY").
+    """
     def __init__(self,  
                     predictions: pd.DataFrame, 
                     id_col: str = "ID", 
@@ -36,8 +65,19 @@ class ClusterEvaluator:
         self.off_prob_arr[np.arange(self.count), self.targets_arr] = 0
 
 
-    # Internal method - prepares data. Expects:
-    # Example ID column (str), target column (int), prediction column (int), probability column (array or list).
+    """
+    Prepare the prediction data by ensuring correct column types and renaming columns as needed.
+
+    Parameters:
+    - predictions: DataFrame containing prediction data.
+    - id_col: Column name for example IDs (default is "ID").
+    - target_col: Column name for target values (default is "TARGET").
+    - pred_col: Column name for predicted values (default is "PREDICTION").
+    - prob_col: Column name for probability values (default is "PROBABILITY").
+
+    Returns:
+    DataFrame: Processed prediction data with corrected column types and renamed columns.
+    """
     def __prep_data__(self,
                         predictions: pd.DataFrame, 
                         id_col: str = "ID", 
@@ -78,9 +118,15 @@ class ClusterEvaluator:
         return predictions
 
 
-    # Get the influence count matrix. For all classes i, j: 
-    # Among examples of target class i, how many of them have probability in j above a certain threshold?
-    # result[i][j] = influence count of j on target i.
+    """
+    Calculate the count of leakage instances between clusters based on a given detection threshold.
+
+    Parameters:
+    - detection_thresh: The threshold off-target probability for detecting leakage (default is 0.05).
+
+    Returns:
+    np.ndarray: A matrix of leakage counts between clusters.
+    """
     def get_leakage_counts(self, detection_thresh: float = 0.05) -> np.ndarray:
 
         agg_dict = {
@@ -93,7 +139,12 @@ class ClusterEvaluator:
         return leakage_counts.drop("TARGET", axis=1).to_numpy()
     
 
-    # Gets the support of each target, ordered from 0 upwards.
+    """
+    Get the support of each target cluster.
+
+    Returns:
+    np.ndarray: Array containing the support of each target, ordered from 0 upwards.
+    """
     def get_support(self) -> np.ndarray:
 
         if self.support is not None:
@@ -105,9 +156,15 @@ class ClusterEvaluator:
         return self.support
     
 
-    # Influence = influence count normalized by support of class i. Rows do NOT add to 1.
-    # Strictly speaking, an influence[i][j] of 5% means that class j affects 5% of the data with target i.
-    # Multiple clusters can affect the same data points, which is why rows don't add to 1.
+    """
+    Calculate the leakage percentage between clusters based on a given detection threshold.
+
+    Parameters:
+    - detection_thresh: The threshold off-target probability for detecting leakage (default is 0.05).
+
+    Returns:
+    np.ndarray: Array containing the leakage percentages between clusters.
+    """
     def get_leakage(self, detection_thresh: float = 0.05) -> np.ndarray:
 
         counts = self.get_leakage_counts(detection_thresh)
@@ -116,8 +173,17 @@ class ClusterEvaluator:
         return counts / support
 
 
-    # Creates a dictionary from the influence matrix, filtering only the links passing the influence_thresh.
-    # print parameter indicates whether to print phrases or not.
+    """
+    Get a dictionary of cluster leakages above a specified threshold.
+
+    Parameters:
+    - detection_thresh: The threshold off-target probability for detecting leakage (default is 0.05).
+    - leakage_thresh: The threshold for leakage percentage to be included in the dictionary (default is 0.02).
+    - printPhrases: Boolean indicating whether to print readable phrases (default is True).
+
+    Returns:
+    dict: A dictionary where keys are tuples representing cluster pairs leaking, and values are tuples containing leakage percentage, leakage count, support, and a descriptive phrase.
+    """
     def get_leakage_dictionary(self, 
                                  detection_thresh: float = 0.05, 
                                  leakage_thresh: float = 0.02,
@@ -148,11 +214,21 @@ class ClusterEvaluator:
         return leakage_dict
     
 
-    # Create a graph out of the edges that appear in the influence dictionary above.
+    """
+    Save an interactive leakage graph to an HTML file.
+
+    Parameters:
+    - detection_thresh: The threshold for off-target probability to detect leakage (default is 0.05).
+    - leakage_thresh: The threshold for leakage percentage to be included in the graph (default is 0.02).
+    - filename: The name of the HTML file to save the graph (default is "cluster_leakage_graph.html").
+    """
     def save_leakage_graph(self,
                                detection_thresh: float = 0.05,
                                leakage_thresh: float = 0.02,
-                               filename: str = "clustering_influence_graph.html"):
+                               filename: str = "cluster_leakage_graph.html"):
+
+        if not filename.endswith(".html"):
+            filename = filename + ".html"
 
         leakage_matrix = self.get_leakage(detection_thresh)
         np.fill_diagonal(leakage_matrix, 0) # No self-edges in the graph!
@@ -247,7 +323,15 @@ class ClusterEvaluator:
         net.save_graph(filename)
 
 
-    # Gets the total leakage: the number of examples with off-probability more than the threshold.
+    """
+    Calculate the total leakage percentage based on a given detection threshold.
+
+    Parameters:
+    - detection_thresh: The threshold off-target probability for detecting leakage (default is 0.05).
+
+    Returns:
+    float: The total leakage percentage.
+    """
     def get_total_leakage(self, detection_thresh: float = 0.05) -> float:
 
         max_off_prob = np.max(self.off_prob_arr, axis=1)
@@ -256,8 +340,15 @@ class ClusterEvaluator:
         return num_leaks / self.count
     
 
-    # Do hypothesis testing on the total leakage at different detection thresholds and different comparison values
-    # for the alternative hypothesis. Generate a plotly table, also returns data behind the table in a tuple.
+    """
+    Perform hypothesis testing on the total leakage at different detection thresholds and comparison values.
+    
+    Parameters:
+    - significance_level: The significance level for the hypothesis test (default is 0.05).
+
+    Returns:
+    Tuple: A tuple containing a plotly figure, cell labels, cell colors, x-axis values, and y-axis values.
+    """
     def hypothesis_test_total_leakage(self, significance_level = 0.05):
 
         comparison_values = np.linspace(0.05, 0.25, num=9)
@@ -312,12 +403,23 @@ class ClusterEvaluator:
         return (fig, cell_labels, cell_colors, x_axis, y_axis)
     
     
-    # Write full report to xlsx. (Does not include influence graph)
-    def save_xml_report(self, 
+    """
+    Save a leakage report to an Excel file with detailed statistics and conditional formatting.
+
+    Parameters:
+    - detection_thresh: The threshold for off-target probability to detect leakage (default is 0.05).
+    - leakage_thresh: The threshold for leakage percentage to be colored in the report (default is 0.02).
+    - significance_level: The significance level for hypothesis testing (default is 0.05).
+    - filename: The name of the Excel file to save the report (default is "cluster_leakage_report.xlsx").
+    """
+    def save_leakage_report(self, 
                         detection_thresh: float = 0.05, 
                         leakage_thresh: float = 0.02,
                         significance_level: float = 0.05,
                         filename: str = "cluster_leakage_report.xlsx"):
+
+        if not filename.endswith(".xlsx"):
+            filename = filename + ".xlsx"
 
         col_names = ["ID", "TARGET", "PREDICTION"]
         predictions_arr = self.predictions.to_numpy()
@@ -513,10 +615,36 @@ class ClusterEvaluator:
 
 
 
-# Modeling using sklearn logistic regression. Model outputs can be passed to ClusterEvaluator.
+"""
+Class for predicting clusters based on given data.
+
+Parameters:
+- clustering_data: DataFrame containing the data for clustering.
+- id_col: Column name for IDs.
+- target_col: Column name for target values.
+- nonlinear_boundary: Boolean indicating whether to use a nonlinear boundary (default True).
+
+Methods:
+- evaluate_model_train(): Evaluate the model on the train set.
+- evaluate_model_test(): Evaluate the model on the test set.
+- evaluate_model(): Perform full evaluation on both train and test sets.
+- get_train_predictions(): Get formatted DataFrame of predictions on the train set.
+- get_test_predictions(): Get formatted DataFrame of predictions on the test set.
+"""
 class ClusterPredictor:
 
-    # Expects targets to be integer encoded from 0 to # clusters - 1
+
+    """
+    Initialize the ClusterPredictor class with the provided clustering data and parameters.
+
+    Parameters:
+    - clustering_data: DataFrame containing the data for clustering.
+    - id_col: Column name for IDs (default is "ID").
+    - target_col: Column name for target values (default is "TARGET").
+    - nonlinear_boundary: Boolean indicating whether to use a nonlinear boundary (default is True).
+
+    The method processes the data, trains a model, and stores model predictions for train and test sets.
+    """
     def __init__(self,
                  clustering_data: pd.DataFrame, 
                  id_col: str = "ID", 
@@ -542,8 +670,18 @@ class ClusterPredictor:
         self.data["test_y_pred"] = self.model.predict(self.data["test_x"])
         self.data["test_y_pred_proba"] = self.model.predict_proba(self.data["test_x"])
     
-    # Internal method to process data. Expects ID and target columns. 
-    # The rest of the columns are treated as features.
+
+    """
+    Process the clustering data by checking and adjusting column types, renaming columns, and splitting the data into train and test sets.
+
+    Parameters:
+    - clustering_data: DataFrame containing the data for clustering.
+    - id_col: Column name for IDs (default is "ID").
+    - target_col: Column name for target values (default is "TARGET").
+
+    Returns:
+    - Tuple containing train_data, test_data, train_x, train_y, test_x, test_y.
+    """
     def __process_data__(self,
                          clustering_data: pd.DataFrame, 
                          id_col: str = "ID", 
@@ -582,7 +720,12 @@ class ClusterPredictor:
         return train_data, test_data, train_x, train_y, test_x, test_y
     
     
-    # Internal method to train logistic regression model.
+    """
+    Train a logistic regression model with optional nonlinear boundary transformation using RBFSampler.
+
+    Returns:
+        The best estimator model after performing grid search cross-validation.
+    """
     def __train_model__(self):
 
         if self.nonlinear_boundary:
@@ -607,7 +750,9 @@ class ClusterPredictor:
         return crossval.best_estimator_
         
 
-    # Evalaute the model on the train set.
+    """
+    Evaluate the trained model on the train set by generating a classification report and a confusion matrix visualized as a heatmap. The confusion matrix displays the true labels on the y-axis and the predicted labels on the x-axis. The heatmap provides a visual representation of the classification performance on the training data.
+    """
     def evaluate_model_train(self):
 
         y_true = self.data["train_y"]
@@ -639,7 +784,9 @@ class ClusterPredictor:
         print("----------------------------------------------------------------\n")
 
 
-    # Evalaute the model on the train set.
+    """
+    Evaluate the trained model on the test set by generating a classification report and a confusion matrix visualized as a heatmap. The confusion matrix displays the true labels on the y-axis and the predicted labels on the x-axis. The heatmap provides a visual representation of the classification performance on the test data.
+    """
     def evaluate_model_test(self):
 
         y_true = self.data["test_y"]
@@ -671,13 +818,20 @@ class ClusterPredictor:
         print("----------------------------------------------------------------\n")
 
 
-    # Full evaluation.
+    """
+    Execute the evaluation of the trained model on both the train and test sets.
+    """
     def evaluate_model(self):
         self.evaluate_model_train()
         self.evaluate_model_test()
 
 
-    # Formatted data frame to be passed to the ClusterEvaluator.
+    """
+    Generate and return a DataFrame with predictions for the training set.
+
+    Returns:
+        pd.DataFrame: DataFrame containing columns 'ID', 'TARGET', 'PREDICTION', and 'PROBABILITY'.
+    """
     def get_train_predictions(self):
 
         output: pd.DataFrame = pd.DataFrame(self.data["train_data"][["ID", "TARGET"]])
@@ -689,7 +843,12 @@ class ClusterPredictor:
         return output
     
 
-    # Formatted data frame to be passed to the ClusterEvaluator.
+    """
+    Generate and return a DataFrame with predictions for the test set.
+
+    Returns:
+        pd.DataFrame: DataFrame containing columns 'ID', 'TARGET', 'PREDICTION', and 'PROBABILITY'.
+    """
     def get_test_predictions(self):
 
         output: pd.DataFrame = pd.DataFrame(self.data["test_data"][["ID", "TARGET"]])

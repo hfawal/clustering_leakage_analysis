@@ -29,4 +29,4 @@ output.info()
 # Try passing it directly to the cluster evaluator
 evaluator = ClusterEvaluator(output)
 evaluator.save_leakage_graph(filename="blob_graph.html")
-evaluator.save_xml_report(filename="blob_report.xlsx")
+evaluator.save_leakage_report(filename="blob_report.xlsx")

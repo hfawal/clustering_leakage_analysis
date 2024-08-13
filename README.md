@@ -117,15 +117,15 @@ test_predictions = predictor.get_test_predictions()
 evaluator = ClusterEvaluator(test_predictions)
 
 # Save visualization in working directory.
-evaluator.save_influence_graph(detection_thresh=0.05,
-                                 leakage_thresh=0.02,
-                                 filename="blob_graph.html")
+evaluator.save_leakage_graph(detection_thresh=0.05,
+                             leakage_thresh=0.02,
+                             filename="blob_graph.html")
 
 # Save report with leakage metrics in working directory.
-evaluator.save_xml_report(detection_thresh=0.05,
-                          leakage_thresh=0.02,
-                          significance_level=0.05,
-                          filename="blob_report.xlsx")
+evaluator.save_leakage_report(detection_thresh=0.05,
+                              leakage_thresh=0.02,
+                              significance_level=0.05,
+                              filename="blob_report.xlsx")
 ```
 
 ## License
