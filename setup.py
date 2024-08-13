@@ -92,11 +92,11 @@ Equancy All Rights Reserved
 
 setup(
     name='leakyblobs',
-    version='0.2.3',    
+    version='0.2.4',    
     description='Clustering leakage analysis library.',
     long_description=description_markdown,
     long_description_content_type='text/markdown',
-    url='https://git.equancy.cloud/equancy/data-intelligence/clustering_leakage_analysis/-/tree/1_initial_dev_HF',
+    url='https://github.com/hfawal/clustering_leakage_analysis',
     author='Hady Fawal',
     author_email='hfawal@equancy.com',
     license='Equancy All Rights Reserved',
