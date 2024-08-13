@@ -1,0 +1,43 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.3.0
+    hooks:
+    - id: check-case-conflict
+    - id: check-json
+    - id: check-yaml
+    - id: end-of-file-fixer
+      exclude: data
+    - id: trailing-whitespace
+      exclude: data
+    - id: mixed-line-ending
+    - id: check-ast
+    - id: debug-statements
+    - id: detect-private-key
+    - id: check-added-large-files
+      args: [--maxkb=50000]
+    - id: check-merge-conflict
+    - id: pretty-format-json
+      args: [--autofix, --indent=4, --no-sort-keys]
+    - id: requirements-txt-fixer
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.4
+    hooks:
+      - id: ruff
+        name: Python - Lints and Auto-Fix Errors
+        args: [--fix]
+      - id: ruff-format
+        name: Python - Fix Formatting
+
+  - repo: https://github.com/timothycrosley/isort
+    rev: 5.12.0
+    hooks:
+    - id: isort
+      args: [--float-to-top, --profile=black]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.6.1
+    hooks:
+    - id: mypy
