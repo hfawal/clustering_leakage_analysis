@@ -77,8 +77,7 @@ To re-upload the package to [PyPI](https://pypi.org/), you will also need to `pi
 
 ## Data
 
-For testing purposes, a dataset containing features used to cluster customers of [Marjane](https://www.marjane.ma/), a client of [Equancy | Groupe EDG](https://www.equancy.fr/fr/), was useful. The `data` folder is not included in the repository to protect their privacy.
-(For readers at Equancy | Groupe EDG, this data can be found in the sandbox cloud storage.) 
+For testing purposes, a dataset containing features used to cluster customers of a certain hypermarket was useful. The `data` folder is not included in the repository to protect their privacy.
 
 ## Usage
 

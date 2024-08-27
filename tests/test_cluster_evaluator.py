@@ -10,7 +10,7 @@ import numpy as np
 
 
 # Get the data.
-test_cluster_predictions = pd.read_parquet(f"{DATA_PATH}\\test cluster data marjane\\pip_package_test_data.parquet")
+test_cluster_predictions = pd.read_parquet(f"{DATA_PATH}\\test cluster data\\pip_package_test_data.parquet")
 
 evaluator = ClusterEvaluator(test_cluster_predictions, "EXAMPLE_ID", "TARGET", "PREDICTION", "probability")
 
@@ -47,10 +47,10 @@ print()
 
 print("create_influence_graph")
 evaluator.save_leakage_graph(detection_thresh=0.05, leakage_thresh=0.02, 
-                                 filename="marjane_clustering_influence_graph.html")
+                                 filename="clustering_influence_graph.html")
 print()
 
 print("save_xml_report")
 evaluator.save_leakage_report(detection_thresh=0.05, leakage_thresh=0.02, 
-                          significance_level=0.05, filename="marjane_clustering_leakage_report.xlsx")
+                          significance_level=0.05, filename="clustering_leakage_report.xlsx")
 print()

@@ -10,7 +10,7 @@ import pandas as pd
 
 
 # Get the data.
-training_set = pd.read_parquet(f"{DATA_PATH}\\test cluster data marjane\\pip_package_full_cluster_data.parquet")
+training_set = pd.read_parquet(f"{DATA_PATH}\\test cluster data\\pip_package_full_cluster_data.parquet")
 training_set.TARGET = training_set.TARGET.astype("int32")
 training_set.info()
 
